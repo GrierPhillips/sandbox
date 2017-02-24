@@ -1,10 +1,12 @@
-from collections import defaultdict, Counter
 from itertools import combinations
 from time import time, sleep
-# import pickle as pickle
+import pickle
 import multiprocessing as mp
-import threading
-from multiprocessing.managers import BaseManager, DictProxy
+from multiprocessing import Manager, Process
+from multiprocessing.managers import BaseManager, ListProxy
+from multiprocessing.sharedctypes import Array
+from blist import blist  # pylint: disable=E0611
+from ctypes import Structure, c_wchar_p
 
 
 class ParseVehicleTrajectories(object):
@@ -55,7 +57,7 @@ class ParseVehicleTrajectories(object):
                 self.line += 1
             for line in self.file_obj:
                 self.line += 1
-                if self.line > 10000:
+                if self.line > 2000:
                     break
                 if line.startswith(' ##'):
                     break
@@ -95,11 +97,16 @@ class TaskWorker(mp.Process):
         return
 
     def process_record(self, record):
+        '''
+        Extract info from record and use it to collect list of (from_node,
+        to_node, stime) tuples.
+        '''
         info = self.parse_record(record)
-        node_pairs = self.create_keys(info)
-        return node_pairs
+        node_time_pairs = self.create_tuples(info)
+        return node_time_pairs
 
-    def parse_record(self, record):
+    @staticmethod
+    def parse_record(record):
         '''
         Parse an individual vehicle trajectory record.
         '''
@@ -116,7 +123,8 @@ class TaskWorker(mp.Process):
             cum_time = lines[2].split()
         return stime, nodes, cum_time
 
-    def create_keys(self, info):
+    @staticmethod
+    def create_tuples(info):
         '''
         Find all possible combinations of trips given the nodes traversed by
         a vehicle and the associated start time.
@@ -128,148 +136,120 @@ class TaskWorker(mp.Process):
             pair.append(round(stime + float(cum_time[node_idx])))
         return node_pairs
 
-class ProcessManager(object):
-    def __init__(self):
-        self.workers = []
-        self.errors_flag = False
-        self._threads = []
-        self._lock = threading.Lock()
 
-    def terminate_all(self):
-        with self._lock:
-            for worker in self.workers:
-                if worker.is_alive():
-                    print('Terminating {}'.format(worker.name))
-                    worker.terminate()
-
-    def launch_proc(self, func, args=()):
-        thread = threading.Thread(
-            target=self._worker_thread_runner, args=(func, args))
-        self._threads.append(thread)
-        thread.start()
-
-    def _worker_thread_runner(self, func, args):
-        worker = func(args)
-        self.workers.append(worker)
-        worker.start()
-        while worker.exitcode is None:
-            worker.join()
-        if worker.exitcode > 0:
-            self.errors_flag = True
-            self.terminate_all()
-
-    def wait(self):
-        for thread in self._threads:
-            thread.join()
+# class ResultWorker(mp.Process):
+#     '''
+#     Worker to handle results queue as node_time_pairs are added.
+#     '''
+#     def __init__(self, result_queue):
+#         mp.Process.__init__(self)
+#         self.result_queue = result_queue
+#
+#     def run(self):
+#         '''
+#         Get a list of nodes-time pairs and append the node pairs to the list
+#         of times index corresponding to the start time of the trip.
+#         '''
+#         global times_list
+#         proc_name = self.name
+#         while True:
+#             node_time_pairs = self.result_queue.get()
+#             if node_time_pairs is None:
+#                 print('{}: Exiting'.format(proc_name))
+#                 self.result_queue.task_done()
+#                 break
+#             for f_node, t_node, stime in node_time_pairs:
+#                 times_list[stime].append((f_node, t_node))
+#             self.result_queue.task_done()
 
 
-class ResultWorker(mp.Process):
+class Nodes(Structure):
+    _fields_ = [('x', c_wchar_p), ('y', c_wchar_p)]
+
+
+class TaskMaster(BaseManager):
     '''
-    Worker to handle results queue as node_pairs are added.
+    Subclass of BaseManager. Used to register blist for shared memory between
+    processes.
     '''
-    def __init__(self, result_queue, return_dict):
-        mp.Process.__init__(self)
-        self.result_queue = result_queue
-        self.key_counts = defaultdict(int)
-        self.return_dict = return_dict
-
-    def run(self):
-        proc_name = self.name
-        key_counts = defaultdict(int)
-        while True:
-            node_pairs = self.result_queue.get()
-            if node_pairs is None:
-                print('{}: Exiting'.format(proc_name))
-                self.result_queue.task_done()
-                break
-            new_vals = self.process_nodes(node_pairs)
-            self.result_queue.task_done()
-            self.return_dict.update(new_vals)
-        # print(self.return_dict)
-        return
-
-
-def process_nodes(results_queue, return_dict):
-    # import pdb; pdb.set_trace()
-    while True:
-        # if results_queue.empty():
-        #     sleep(0.5)
-        # st = time()
-        node_pairs = results_queue.get()
-        # print('get time: {}'.format(time() - st))
-        if node_pairs is None:
-            results_queue.task_done()
-            break
-        for key in node_pairs:
-            # st = time()
-            return_dict[tuple(key)] += 1
-            # print('dict insert time: {}'.format(time() - st))
-        results_queue.task_done()
-        # print(return_dict)
-
-
-class MyManager(BaseManager):
     pass
 
-MyManager.register('defaultdict', defaultdict, DictProxy)
-MyManager.register('Counter', Counter, DictProxy)
+
+TaskMaster.register('blist', blist, ListProxy)
 
 
-if __name__ == '__main__':
-    # mpl = mp.log_to_stderr()
-    # mpl.setLevel(mp.SUBDEBUG)
-    num_workers = mp.cpu_count() * 2 - 1
+def process_nodes(result_queue, times_list):
+    while True:
+        # st = time()
+        node_time_pairs = result_queue.get()
+        # print('get time: {}'.format(time() - st))
+        if node_time_pairs is None:
+            # print('{}: Exiting'.format(proc_name))
+            result_queue.task_done()
+            break
+        for f_node, t_node, stime in node_time_pairs:
+            # st = time()
+            times_list[stime] += [(f_node, t_node)]
+            # print('dict insert time: {}'.format(time() - st))
+        result_queue.task_done()
+
+
+def main(num_cores):
+    '''
+    Main function. Starts worker processes, parses trajectory file, and creates
+    node_times.pkl output with results.
+    '''
+    num_t_workers = int(num_cores / 2)
+    num_r_workers = int(num_cores / 2)
     tasks = mp.JoinableQueue()
     results = mp.JoinableQueue()
-    # key_counts = defaultdict(int)
-    print('Creating {} task workers'.format(num_workers))
-    parser = ParseVehicleTrajectories('VehTrajectory_1.dat', tasks)
-    task_workers = [TaskWorker(tasks, results) for _ in range(1)]
-    for worker in task_workers:
-        worker.start()
-    manager = MyManager()
+    manager = TaskMaster()
     manager.start()
-    partitions = [manager.defaultdict(int) for _ in range(num_workers)]
-    # for i in range(1):
-    # import pdb; pdb.set_trace()
-    result_workers = []
-    for i in range(num_workers):
-        result_workers.append(
-            mp.Process(target=process_nodes, args=(results, partitions[i])))
-    # results_worker = mp.Process(target=process_nodes, args=(results, return_dict))
-    # results_worker.start()
-    for worker in result_workers:
+    # base_list = [list() for _ in range(2000)]
+    times = manager.blist()  # pylint: disable=E1101
+    for _ in range(2000):
+        times.append([])
+    # times = Array(Nodes, [[]]*2000)
+    print(len(times))
+    print('Creating {} task workers.'.format(num_t_workers))
+    t_workers = make_workers(TaskWorker, num_t_workers, [tasks, results])
+    print('Creating {} result workers.'.format(num_r_workers))
+    # r_workers = make_workers(mp.Process, num_r_workers, [results])
+    r_workers = []
+    for _ in range(num_r_workers):
+        worker = mp.Process(target=process_nodes, args=(results, times))
         worker.start()
-
-    # pool = mp.Pool(1, process_nodes, (results, return_dict,))
-    # results_worker = ResultWorker(results, return_dict)
-    # key_counts = results_worker.start()
-    # pool = mp.Pool(processes=1)
+        r_workers.append(worker)
+    parser = ParseVehicleTrajectories('../git/LosManager/VehTrajectory_1.dat', tasks)
     start = time()
     parser.run()
-    # for _ in task_workers:
-    #     tasks.put(None)
-    # sleep(0.5)
     tasks.join()
     print('Record Parsing Time: {}'.format(time() - start))
     results.join()
-    for worker in task_workers:
-        worker.terminate()
-    for worker in result_workers:
-        worker.terminate()
-    final_dict = Counter()
-    st = time()
-    for part in partitions:
-        final_dict += part
     finish = time()
-    print('Time to combine dictionaries: {}'.format(finish - st))
-    # pool.close()
-    # pool.join()
-    # sleep(2)
+    print('Terminating task workers.')
+    for worker in t_workers:
+        worker.terminate()
+    print('Terminating result workers.')
+    for worker in r_workers:
+        worker.terminate()
     print('Total Processing Time: {} s'.format(finish - start))
-    # import pdb; pdb.set_trace()
-    # sleep(1)
-    print(len(final_dict), sum(final_dict.values()))
-    # import pdb; pdb.set_trace()
-    # with open('key_counts.pkl', 'w') as f:
-    #     pickle.dump(f)
+    import pdb; pdb.set_trace()
+    # with open('node_times.pkl', 'wb') as file_obj:
+    #     pickle.dump(times, file_obj)
+
+
+def make_workers(classname, num, args):
+    '''
+    Create any number of workers for a given worker class.
+    '''
+    workers = []
+    for _ in range(num):
+        worker = classname(*args)
+        workers.append(worker)
+        worker.start()
+    return workers
+
+
+if __name__ == '__main__':
+    main(mp.cpu_count() * 2)
