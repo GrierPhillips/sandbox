@@ -1,9 +1,10 @@
 from itertools import combinations
 from time import time, sleep
 import pickle
+from collections import defaultdict
 import multiprocessing as mp
 from multiprocessing import Manager, Process
-from multiprocessing.managers import BaseManager, ListProxy
+from multiprocessing.managers import BaseManager, ListProxy, DictProxy
 from multiprocessing.sharedctypes import Array
 from blist import blist  # pylint: disable=E0611
 from ctypes import Structure, c_wchar_p
@@ -174,7 +175,8 @@ class TaskMaster(BaseManager):
     '''
     pass
 
-
+TaskMaster.register('defaultdict', defaultdict, DictProxy)
+TaskMaster.register('dict', dict, DictProxy)
 TaskMaster.register('blist', blist, ListProxy)
 
 
@@ -189,35 +191,42 @@ def process_nodes(result_queue, times_list):
             break
         for f_node, t_node, stime in node_time_pairs:
             # st = time()
-            times_list[stime] += [(f_node, t_node)]
+            managed_obj_nested_add(times_list, stime, (f_node, t_node))
+            # times_list[stime] += [(f_node, t_node)]
             # print('dict insert time: {}'.format(time() - st))
         result_queue.task_done()
 
+def managed_obj_nested_add(obj, index, val):
+    shared = obj[index]
+    shared.add(val)
+    obj[index] = shared
 
 def main(num_cores):
     '''
     Main function. Starts worker processes, parses trajectory file, and creates
     node_times.pkl output with results.
     '''
-    num_t_workers = int(num_cores / 2)
-    num_r_workers = int(num_cores / 2)
+    num_t_workers = int(2)
+    num_r_workers = int(num_cores - num_t_workers)
     tasks = mp.JoinableQueue()
     results = mp.JoinableQueue()
     manager = TaskMaster()
     manager.start()
     # base_list = [list() for _ in range(2000)]
-    times = manager.blist()  # pylint: disable=E1101
-    for _ in range(2000):
-        times.append([])
+    partitions = [manager.defaultdict(set) for _ in range(num_r_workers)]
+    # times = manager.blist()  # pylint: disable=E1101
+    # for i in range(2000):
+    #     for part in partitions:
+    #         part[i] = set()
     # times = Array(Nodes, [[]]*2000)
-    print(len(times))
+    print(len(partitions))
     print('Creating {} task workers.'.format(num_t_workers))
     t_workers = make_workers(TaskWorker, num_t_workers, [tasks, results])
     print('Creating {} result workers.'.format(num_r_workers))
     # r_workers = make_workers(mp.Process, num_r_workers, [results])
     r_workers = []
-    for _ in range(num_r_workers):
-        worker = mp.Process(target=process_nodes, args=(results, times))
+    for i in range(num_r_workers):
+        worker = mp.Process(target=process_nodes, args=(results, partitions[i]))
         worker.start()
         r_workers.append(worker)
     parser = ParseVehicleTrajectories('../git/LosManager/VehTrajectory_1.dat', tasks)
@@ -233,8 +242,14 @@ def main(num_cores):
     print('Terminating result workers.')
     for worker in r_workers:
         worker.terminate()
+    final_dict = defaultdict(set)
+    for part in partitions:
+        for key, value in part.items():
+            tups = list(value)
+            for tup in tups:
+                final_dict[key].add(tup)
     print('Total Processing Time: {} s'.format(finish - start))
-    import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
     # with open('node_times.pkl', 'wb') as file_obj:
     #     pickle.dump(times, file_obj)
 
