@@ -70,9 +70,10 @@ class ParseVehicleTrajectories(object):
         # print("| Join time: {}".format(time() - st2))
         self.line += 1
         rem_lines = int((num_nodes - 1)/50)
+        import pdb; pdb.set_trace()
         for _ in range(4):
             # st2 = time()
-            vals += '|' + str(self.iter_rem_lines(rem_lines))
+            vals_string += '|' + str(self.iter_rem_lines(rem_lines))
             # print("vals {} time: {}".format(_, time() - st2))
         # st2 = time()
         self.csv.append(vals_string + '\n')
@@ -93,7 +94,7 @@ class ParseVehicleTrajectories(object):
                 self.line += 1
                 # if self.line % 100000 < 10:
                 #     print(self.line)
-                if self.line > 20000000:
+                if self.line > 10:
                     break
                 if line.startswith(' ##'):
                     break
@@ -117,6 +118,7 @@ def main():
     text = '\n'.join(parser.csv)
     data = pd.read_csv(StringIO(text), sep='|')
     data.to_csv('Parsed_Trajectories.csv', sep='|')  # pylint: disable=E1101
+    # data.to_hdf('Parsed_Trajectories.hdf', 'trajectories', mode='w')
 
 
 if __name__ == '__main__':
