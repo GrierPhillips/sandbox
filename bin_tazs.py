@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 import scipy.sparse as ss
 import dask.dataframe as dd
+import dask
 
 # import matplotlib.pyplot as plt
 # import seaborn as sns
@@ -21,11 +22,23 @@ def fill_sparse(row, sparse):
         sparse[row[0], int(taz)] = taz
 
 
+def increment_dict(item, mgr_list):
+    mgr_list[int(taz)] += 1
+
+
+def map_nodes(node, sparse_dict, mgr_list):
+    for taz in sparse_dict.get(node, [0]):
+        mgr_list[int(taz)] += 1
+
+
 def count_tazs(row, sparse_mat, mgr_list):
-    print(row)
-    for node in row.Nodes:
-        for taz in sparse_mat[int(node)].data[0]:
-            mgr_list[int(taz)] += 1
+    # print(row)
+    for nodes in row.Nodes:
+        for node in nodes:
+            # print(node, type(node))
+            # print(sparse_mat.get(node, 0))
+            for taz in sparse_mat.get(node, [0]):
+                mgr_list[int(taz)] += 1
 
 
 def process_chunk(df, sparse_mat, mgr_list):
@@ -62,8 +75,10 @@ if __name__ == '__main__':
         sep='|',
         converters={'tazList': ast.literal_eval})
 
-    sparse = ss.lil_matrix(np.zeros((300000, tazs.tazList.max()[0] + 1)))
-    tazs.apply(lambda x: fill_sparse(x, sparse), axis=1)
+    # sparse = ss.lil_matrix(np.zeros((300000, tazs.tazList.max()[0] + 1)))
+    # tazs.apply(lambda x: fill_sparse(x, sparse), axis=1)
+    sparse = dict()
+    tazs.apply(lambda x: sparse.update({x[0]: x[2]}), axis=1)
     # context = mp.get_context('spawn')
     pool = mp.Pool(num_workers)
     manager = TaskMaster()
@@ -74,10 +89,10 @@ if __name__ == '__main__':
     # for index, chunk in enumerate(reader):
     #     worker = pool.apply_async(process_chunk, [chunk, sparse, manager_lists[index]])
     #     workers.append(worker)
-    result = dask_df.apply(
+    result = dask_df.map_partitions(
         count_tazs,
-        axis=1,
-        args=(sparse, final_dict,),
+        sparse,
+        final_dict,
         meta=({
             'Veh#': 'i8',
             'Tag': 'i8',
@@ -99,12 +114,13 @@ if __name__ == '__main__':
             'TripPur': 'i8',
             'IniGas': 'f8',
             'Toll': 'f8',
-            'Nodes': 'object'}))
+            'Nodes': 'object'})).compute(get=dask.multiprocessing.get)
+    # result.compute()
     # final_taz_bins = pd.Series(0, index=np.arange(tazs.tazList.max()[0] + 1))
     # for part in manager_lists:
     #     part = pd.Series(part.values(), index=part.keys())
     #     final_taz_bins += part
 
     import pdb; pdb.set_trace()
-
-    final_dict.to_csv('taz_bins.csv', index=False)
+    #
+    # final_dict.to_csv('taz_bins.csv', index=False)
