@@ -1,7 +1,7 @@
 import ast
 import pickle
+import ctypes
 from time import time
-from numba import jit
 import multiprocessing as mp
 from multiprocessing import Manager
 from multiprocessing.managers import BaseManager, DictProxy
@@ -14,24 +14,40 @@ import scipy.sparse as ss
 # import seaborn as sns
 from collections import Counter
 from itertools import repeat
+from contextlib import closing
 # pylint: disable=E1101
 
-#@jit
+
 def fill_sparse(row, sparse):
     for taz in row[2]:
         sparse[row[0], int(taz)] = taz
 
-#@jit
-def count_tazs(row, sparse, final_dict):
+
+def count_tazs(row):
     bins = np.bincount(sparse[row])
     final_dict[:len(bins)] += bins
+
 
 def set_sparse(row, sparse):
     sparse[row[0]] = row[2][0]
 
-#@jit
+
 def process_chunk(chunk_item, sparse_mat, mgr_list):
     chunk_item.Nodes.map(lambda x: count_tazs(x, sparse_mat, mgr_list))
+
+
+def init(shared_arr_, sparse_, final_dict_):
+    global shared_arr
+    global sparse
+    global final_dict
+    shared_arr = shared_arr_
+    sparse = sparse_
+    final_dict = final_dict_
+
+
+def tonumpyarray(mp_arr):
+    return np.frombuffer(mp_arr.get_obj())
+
 
 
 class TaskMaster(BaseManager):
@@ -42,6 +58,9 @@ class TaskMaster(BaseManager):
     pass
 
 TaskMaster.register('defaultdict', defaultdict, DictProxy)
+
+
+
 
 if __name__ == '__main__':
     num_workers = mp.cpu_count()
@@ -63,21 +82,27 @@ if __name__ == '__main__':
     sparse = np.zeros(300000)
     sparse = sparse.astype(int)
     tazs.apply(lambda x: set_sparse(x, sparse), axis=1)
-    dicts = []
-    for _ in range(num_workers):
-        dicts.append(sparse.copy())
-    pool = mp.Pool(num_workers)
-    manager = TaskMaster()
-    manager.start()
-    manager_lists = [manager.defaultdict(int) for _ in range(num_workers)]
-    # final_dict = manager.defaultdict(int)
+    # dicts = []
+    # for _ in range(num_workers):
+    #     dicts.append(sparse.copy())
     final_dict = np.zeros(2108)
-    #workers = []
+    shared_arr = mp.Array(ctypes.c_double, 2108)
+    arr = tonumpyarray(shared_arr)
     start = time()
-    for chunk in reader:
-        chunk.Nodes = chunk.Nodes.apply(np.array)
-        chunk = chunk.drop(chunk.columns[chunk.columns != 'Nodes'], axis=1)
-        chunk.Nodes.map(lambda x: count_tazs(x, sparse, final_dict))
+    with closing(mp.Pool(initializer=init, initargs=(shared_arr, sparse, final_dict, ))) as pool:
+        pool.map_async(count_tazs, reader)
+    pool.join()
+    # pool = mp.Pool(num_workers)
+    # manager = TaskMaster()
+    # manager.start()
+    # manager_lists = [manager.defaultdict(int) for _ in range(num_workers)]
+    # final_dict = manager.defaultdict(int)
+    #workers = []
+
+    # for chunk in reader:
+    #     chunk.Nodes = chunk.Nodes.apply(np.array)
+    #     chunk = chunk.drop(chunk.columns[chunk.columns != 'Nodes'], axis=1)
+    #     chunk.Nodes.map(lambda x: count_tazs(x, sparse, final_dict))
     # pool.starmap_async(process_chunk, zip(reader, dicts, manager_lists))
     #for index, chunk in enumerate(reader):
     #    worker = pool.apply_async(process_chunk, [chunk, sparse, manager_lists[index]])
