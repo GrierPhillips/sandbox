@@ -26,7 +26,7 @@ class AB_DST2(object):
         Set values for header_info and value_info.
         '''
         fmt_header = '<iBHHBBxxxiiiffiBBfBfBffx'
-        size_header = struct.calcsize(fmt_header)  # type: int
+        size_header = struct.calcsize(fmt_header)
         self.header_info = {'fmt': fmt_header, 'size': size_header}
         fmt_value = '<i'
         size_value = struct.calcsize(fmt_value)
