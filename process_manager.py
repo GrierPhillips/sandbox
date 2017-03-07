@@ -33,7 +33,7 @@ class ProcessManager(object):
             Execute runISAM.cmd with the argument 0 and wait for the
         process to exit.
         '''
-        command = script + ' ' + str(self.inner)
+        command = script + ' ' + str(self.outer) + ' ' + str(self.inner)
         result = subprocess.run(
             command,
             check=True,
