@@ -23,11 +23,13 @@ class ProcessManager(object):
     def call_command(self, script):
         '''
         Call a shell command and wait for it to execute.
+
         Args:
-            script: String. A command that executes on the command line.
+            script (string): A command that executes on the command line.
+
         Example:
-            call_command('runISAM.cmd', (0))
-        This will execute runISAM.cmd with the argument 0 and wait for the
+            >>> call_command('runISAM.cmd', (0))
+            Execute runISAM.cmd with the argument 0 and wait for the
         process to exit.
         '''
         command = script + ' ' + str(self.iter)
@@ -50,10 +52,14 @@ class ProcessManager(object):
         ab_dst.run()
 
     @staticmethod
-    def _copy_log_file(source, destination):
+    def _copy_file(source, destination):
         '''
         Private static method for copying and saving results from each
         iteration.
+
+        Args:
+            source (string): Path to the source file.
+            destination (string): Path of where to copy source to.
         '''
         directory = path.dirname(destination)
         if not path.exists(directory):
