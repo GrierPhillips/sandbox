@@ -40,7 +40,7 @@ class ProcessManager(object):
             universal_newlines=True)
         event_file = 'iter{0}\\event_{1}{2}{0}.log'.format(
             self.iter, command[3].lower(), command[4:-4])
-        self._copy_log_file('event.log', event_file)
+        self._copy_file('event.log', event_file)
 
     def run_dynust(self):
         '''
@@ -76,4 +76,4 @@ class ProcessManager(object):
         loop_dir = 'inner{}\\'.format(self.iter)
         for summary in self.sumary_stats:
             dest = loop_dir + summary[:-4] + '{}.dat'.format(self.iter)
-            self._copy_log_file(summary, dest)
+            self._copy_file(summary, dest)
