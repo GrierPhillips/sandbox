@@ -3,7 +3,6 @@
 # DynusT batch run for iSAM
 
 import os
-import sys
 import struct
 from array import array
 from shutil import copyfile, SameFileError
@@ -27,7 +26,7 @@ class AB_DST2(object):
         Set values for header_info and value_info.
         '''
         fmt_header = '<iBHHBBxxxiiiffiBBfBfBffx'
-        size_header = struct.calcsize(fmt_header)
+        size_header = struct.calcsize(fmt_header)  # type: int
         self.header_info = {'fmt': fmt_header, 'size': size_header}
         fmt_value = '<i'
         size_value = struct.calcsize(fmt_value)
@@ -40,10 +39,10 @@ class AB_DST2(object):
         with open(params_file, 'r') as file_obj:
             for line in file_obj:
                 try:
-                    self.params, value = line.split('=')
+                    param, value = line.split('=')
                 except ValueError:
                     continue
-                self.params[self.params] = value.strip()
+                self.params[param] = value.strip()
 
     def prepare_vehicle(self):
         inf = self.params["in_vehicle"]
@@ -101,9 +100,9 @@ class AB_DST2(object):
         xxx = self.params["in_folder"]
         os.chdir(xxx)
         scenario = os.path.basename(xxx)
-        xxx += ("\\" + scen + ".dws")
+        xxx += ("\\" + scenario + ".dws")
         print("Running DynusT...\n", xxx, '\n', scenario)
-        os.spawnv(os.P_WAIT, executable, (executable, xxx))
+        os.spawnv(os.P_WAIT, executable, [executable, xxx])
 
     def post_run(self):
         '''
@@ -155,13 +154,18 @@ class AB_DST2(object):
             file_obj.write(data)
             veh_ids = array('i')
             veh_ids.fromlist(self.vehicle_id)
-            veh_ids.tofile(file_obj)
             tot_times = array('f')
             tot_times.fromlist(self.total_time)
-            tot_times.tofile(file_obj)
             tags = array('i')
             tags.fromlist(self.tag)
-            tags.tofile(file_obj)
+            np.savez_compressed(
+                file_obj,
+                veh_ids=veh_ids,
+                tot_times=tot_times,
+                tags=tags)
+            # veh_ids.tofile(file_obj)  # type: ignore
+            # tot_times.tofile(file_obj)  # type: ignore
+            # tags.tofile(file_obj)  # type: ignore
 
     def load(self, file_obj):
         '''
@@ -180,13 +184,13 @@ class AB_DST2(object):
         except struct.error:
             print('Reached end of records.')
             return False
-        if not self.read_values_line(file_obj, 'i'):
+        if not self.read_values_line(file_obj, int):
             return False
         if tag == 1 and nodes <= 1:
             return True
         else:
             for _ in range(3):
-                if not self.read_values_line(file_obj, 'f'):
+                if not self.read_values_line(file_obj, float):
                     return False
         return True
 
@@ -202,7 +206,7 @@ class AB_DST2(object):
             print('No more nodes found.')
             return False
         try:
-            _ = np.fromfile(file_obj, dtype, nodes)
+            _ = np.fromfile(file_obj, dtype=dtype, count=nodes)
         except ValueError as error:
             print(error)
             return False
