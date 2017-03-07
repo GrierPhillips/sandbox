@@ -4,8 +4,7 @@ the ABM->ISAM->DTA pipeline.
 '''
 
 import subprocess
-from os import makedirs, getcwd, path
-from pathlib import Path
+from os import makedirs, path
 from shutil import copy2
 from ab_dst2 import AB_DST2
 
@@ -21,7 +20,6 @@ class ProcessManager(object):
             'Convergence.dat', 'OutMUC.dat', 'SummaryStat.dat']
         self.inner = 0
         self.outer = 0
-        self.path = Path(getcwd())
 
     def call_command(self, script):
         '''
@@ -36,11 +34,11 @@ class ProcessManager(object):
         process to exit.
         '''
         command = script + ' ' + str(self.inner)
-        # result = subprocess.run(
-        #     command,
-        #     check=True,
-        #     stderr=subprocess.PIPE,
-        #     universal_newlines=True)
+        result = subprocess.run(
+            command,
+            check=True,
+            stderr=subprocess.PIPE,
+            universal_newlines=True)
         print('Ran command: {}'.format(command))
         event_file = 'outer{0}\\inner{1}\\event_{2}{3}{1}.log'.format(
             self.outer, self.inner, command[3].lower(), command[4:-4])
@@ -54,8 +52,8 @@ class ProcessManager(object):
         prop_file = 'outer{}\\ab_dst_{}.dat'.format(
             self.outer, self.inner)
         ab_dst = AB_DST2(prop_file)
-        print('AB_DST2 created. Run # {}'.format(self.inner))
-        # ab_dst.run()
+        print('AB_DST2 created with property file: {}'.format(prop_file))
+        ab_dst.run()
 
     @staticmethod
     def _copy_file(source, destination):
