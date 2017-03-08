@@ -31,7 +31,7 @@ class BasePropGen(object):
             params[key] = value.strip()
         return params
 
-    def set_values(self, outer, inner):
+    def _set_values(self, outer, inner):
         '''
         For non path values in the property file update the values to be those
         entered by the user.
@@ -89,3 +89,9 @@ class BasePropGen(object):
             lines.append('='.join(item) + '\n')
         with open(filename, 'w') as file_obj:
             file_obj.writelines(lines)
+
+
+class DSTPropertyGenerator(BasePropGen):
+    def __init__(self, template, parameters):
+        super(DSTPropertyGenerator, self).__init__(template, parameters)
+        self.root_path_keys =
