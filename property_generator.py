@@ -10,6 +10,7 @@ class BasePropGen(object):
         self.params = self._get_params()
         self.root_path_keys = []
         self.loop_path_keys = []
+        self._get_path_keys()
 
     def _read_temp(self):
         '''
@@ -30,6 +31,14 @@ class BasePropGen(object):
         for key, value in params.items():
             params[key] = value.strip()
         return params
+
+    def _get_path_keys(self):
+        for key, value in self.params.items():
+            if 'BASEPATH' in value:
+                if 'LOOP_PAIR' in value or 'OUTER' in value:
+                    self.loop_path_keys.append(key)
+                else:
+                    self.root_path_keys.append(key)
 
     def _set_values(self, outer, inner):
         '''
@@ -83,7 +92,7 @@ class BasePropGen(object):
             outer (string): The current outer loop iteration number.
             inner (string): The current inner loop iteration number.
         '''
-        self.set_values(outer, inner)
+        self._set_values(outer, inner)
         lines = []
         for item in self.params.items():
             lines.append('='.join(item) + '\n')
@@ -94,4 +103,3 @@ class BasePropGen(object):
 class DSTPropertyGenerator(BasePropGen):
     def __init__(self, template, parameters):
         super(DSTPropertyGenerator, self).__init__(template, parameters)
-        self.root_path_keys =
