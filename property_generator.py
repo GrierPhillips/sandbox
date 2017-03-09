@@ -1,7 +1,7 @@
 '''
-property_generator.py: This module contains the DSTPropGen and IsamPropGen
-classes. These classes are used for generating property files for the AB_DST
-class and for use with the runIsam.cmd batch file.
+property_generator.py: This module contains the BasePropGen class. This class
+can be used to generate property files for the AB_DST class and for use with
+the runIsam.cmd batch file.
 '''
 import abc
 
@@ -77,41 +77,6 @@ class BasePropGen(object):
         if key in self.loop_path_keys:
             self.set_loop_paths(key, outer, inner)
 
-    @abc.abstractmethod
-    def set_root_paths(self, key, basepath):
-        '''Method for setting the BASEPATH segment of values that do not
-        contain loop folders in their path.'''
-
-    @abc.abstractmethod
-    def set_loop_paths(self, key, outer, inner):
-        '''Method for setting the BASEPATH and loop directory segments of
-        values that do contain loop folders in their path.'''
-
-    def create(self, filename, outer, inner):
-        '''
-        Construct the parameter file and write it to the desired location.
-
-        Args:
-            filename (string): Path from root containing name of where file
-            will be saved.
-            outer (string): The current outer loop iteration number.
-            inner (string): The current inner loop iteration number.
-        '''
-        self._set_values(outer, inner)
-        lines = []
-        for item in self.params.items():
-            lines.append('='.join(item) + '\n')
-        with open(filename, 'w') as file_obj:
-            file_obj.writelines(lines)
-
-
-class DSTPropGen(BasePropGen):
-    '''
-    Class for generating property files for use by AB_DST objects.
-    '''
-    def __init__(self, template, parameters):
-        super(DSTPropGen, self).__init__(template, parameters)
-
     def set_root_paths(self, key, basepath):
         '''
         Set the BASEPATH value in the parameter for key to the value entered
@@ -139,3 +104,20 @@ class DSTPropGen(BasePropGen):
         else:
             outer_loop = 'outer{}'.format(outer)
             self.params[key] = self.params[key].replace('OUTER', outer_loop)
+
+    def create(self, filename, outer, inner):
+        '''
+        Construct the parameter file and write it to the desired location.
+
+        Args:
+            filename (string): Path from root containing name of where file
+            will be saved.
+            outer (string): The current outer loop iteration number.
+            inner (string): The current inner loop iteration number.
+        '''
+        self._set_values(outer, inner)
+        lines = []
+        for item in self.params.items():
+            lines.append('='.join(item) + '\n')
+        with open(filename, 'w') as file_obj:
+            file_obj.writelines(lines)
