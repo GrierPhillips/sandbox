@@ -1,5 +1,5 @@
 in_folder=BASEPATH\dynust\
-in_vehicle=BASEPATH\LOOP_PAIR\abm_vehicle_0.dat
+in_vehicle=BASEPATH\LOOP_PAIR\abm_vehicle_#.dat
 in_path=
 method=cold
 iters=1
@@ -7,6 +7,6 @@ horizon=200
 threads=20
 sim_interval=6
 binary=yes
-out_vehicle=BASEPATH\LOOP_PAIR\output_vehicle_0.dat
-out_path=BASEPATH\LOOP_PAIR\output_path_0.dat
-out_time=BASEPATH\LOOP_PAIR\output_time_0.bin
+out_vehicle=BASEPATH\LOOP_PAIR\output_vehicle_#.dat
+out_path=BASEPATH\LOOP_PAIR\output_path_#.dat
+out_time=BASEPATH\LOOP_PAIR\output_time_#.bin
