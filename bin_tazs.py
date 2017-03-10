@@ -1,68 +1,49 @@
 import ast
-import pickle
-import multiprocessing as mp
-from multiprocessing import Manager
-from multiprocessing.managers import BaseManager, DictProxy
-from collections import defaultdict
 from math import ceil
+from time import time
 import pandas as pd
 import numpy as np
-import scipy.sparse as ss
 import dask.dataframe as dd
 import dask
+from multiprocessing import cpu_count
+from dask.multiprocessing import get
 
-# import matplotlib.pyplot as plt
-# import seaborn as sns
-from collections import Counter
 # pylint: disable=E1101
 
 
-def fill_sparse(row, sparse):
-    for taz in row[2]:
-        sparse[row[0], int(taz)] = taz
 
+def count_tazs(row, sparse_, final_arr_):
+    bins = np.bincount(sparse_[row.Nodes].flatten())
+    final_arr_[:len(bins)] += bins
 
-def increment_dict(item, mgr_list):
-    mgr_list[int(taz)] += 1
+def set_sparse(row, sparse_):
+    sparse_[row[0]][:row[3].shape[0]] = row[3]
+    sparse_[row[0]][row[3].shape[0]:] = 2108
 
+def process_chunk(chunk_item, sparse_mat, mgr_list):
+    chunk_item.Nodes.map(lambda x: count_tazs(x, sparse_mat, mgr_list))
 
-def map_nodes(node, sparse_dict, mgr_list):
-    for taz in sparse_dict.get(node, [0]):
-        mgr_list[int(taz)] += 1
+def add1(df):
+    return df[df.columns[0]] + 1
 
+def myadd(df, a, b=1):
+    return df.x + df.y + a + b
 
-def count_tazs(row, sparse_mat, mgr_list):
-    # print(row)
-    for nodes in row.Nodes:
-        for node in nodes:
-            # print(node, type(node))
-            # print(sparse_mat.get(node, 0))
-            for taz in sparse_mat.get(node, [0]):
-                mgr_list[int(taz)] += 1
-
-
-def process_chunk(df, sparse_mat, mgr_list):
-    print(chunk_item, sparse_mat, )
-    df.Nodes.apply(lambda x: count_tazs(x, sparse_mat, mgr_list))
-
-
-class TaskMaster(BaseManager):
-    '''
-    Subclass of BaseManager. Used to register blist for shared memory between
-    processes.
-    '''
-    pass
-
-TaskMaster.register('defaultdict', defaultdict, DictProxy)
 
 if __name__ == '__main__':
-    num_workers = mp.cpu_count()
+    num_workers = cpu_count()
     chunksize = ceil(5225579 / num_workers)
     dask_df = dd.read_csv(
         'Parsed_Trajectories.csv',
         sep=' ',
         converters={
             'Nodes': ast.literal_eval})
+    # df = pd.DataFrame({'x': [1, 2, 3, 4, 5],
+    #                    'y': [1., 2., 3., 4., 5.]})
+    # df.to_csv('test.csv')
+    # ddf = dd.read_csv('test.csv')
+    # res = ddf.map_partitions(myadd, 1, b=2).compute(get=get)
+    res = dask_df.map_partitions(add1).compute(get=get)
     # reader = pd.read_csv(
     #     'Parsed_Trajectories.csv',
     #     sep=' ',
@@ -70,57 +51,50 @@ if __name__ == '__main__':
     #     converters={
     #         'Nodes': ast.literal_eval},
     #     chunksize=chunksize)
-    tazs = pd.read_csv(
-        'nodetazs1.csv',
-        sep='|',
-        converters={'tazList': ast.literal_eval})
-
-    # sparse = ss.lil_matrix(np.zeros((300000, tazs.tazList.max()[0] + 1)))
-    # tazs.apply(lambda x: fill_sparse(x, sparse), axis=1)
-    sparse = dict()
-    tazs.apply(lambda x: sparse.update({x[0]: x[2]}), axis=1)
-    # context = mp.get_context('spawn')
-    pool = mp.Pool(num_workers)
-    manager = TaskMaster()
-    manager.start()
-    final_dict = manager.defaultdict(int)
-    # manager_lists = [manager.defaultdict(int) for _ in range(num_workers)]
-    # workers = []
-    # for index, chunk in enumerate(reader):
-    #     worker = pool.apply_async(process_chunk, [chunk, sparse, manager_lists[index]])
-    #     workers.append(worker)
-    result = dask_df.map_partitions(
-        count_tazs,
-        sparse,
-        final_dict,
-        meta=({
-            'Veh#': 'i8',
-            'Tag': 'i8',
-            'OrigTaz': 'i8',
-            'DestTaz': 'i8',
-            'Class': 'i8',
-            'Tck/Hov': 'i8',
-            'UstmN': 'i8',
-            'DownN': 'i8',
-            'DestN': 'i8',
-            'Stime': 'f8',
-            'TotalTime': 'f8',
-            '#Nodes': 'i8',
-            'VehType': 'i8',
-            'EVAC': 'i8',
-            'VOT': 'f8',
-            'tFlag': 'i8',
-            'PrefArrTime': 'f8',
-            'TripPur': 'i8',
-            'IniGas': 'f8',
-            'Toll': 'f8',
-            'Nodes': 'object'})).compute(get=dask.multiprocessing.get)
-    # result.compute()
-    # final_taz_bins = pd.Series(0, index=np.arange(tazs.tazList.max()[0] + 1))
-    # for part in manager_lists:
-    #     part = pd.Series(part.values(), index=part.keys())
-    #     final_taz_bins += part
-
+    # tazs = dd.read_csv(
+    #     'nodetazs1.csv',
+    #     sep='|',
+    #     converters={'tazList': ast.literal_eval})
+    # print(tazs.head())
+    # # max_taz = tazs.tazList.max()[0]
+    # tazs['nodes2'] = 0
+    # tazs['nodes2'] = tazs.map_partitions(add1).compute(get=get)
+    # # tazs['nodes2'] = res
+    # import pdb; pdb.set_trace()
+    # sparse = np.zeros((300000, 7)).astype(int)
+    # tazs.apply(lambda x: set_sparse(x, sparse), axis=1)
+    # final_arr = np.zeros(2109)
+    # start = time()
+    # import pdb; pdb.set_trace()
+    # dask_df.Nodes = dask_df.Nodes.map(np.array)
+    # dask_df = dask_df.drop(dask_df.columns[dask_df.columns != 'Nodes'], axis=1)
+    # result = dask_df.map(
+    #     count_tazs,
+    #     axis=1,
+    #     args=(sparse, final_arr,),
+    #     meta=({
+    #         'Veh#': 'i8',
+    #         'Tag': 'i8',
+    #         'OrigTaz': 'i8',
+    #         'DestTaz': 'i8',
+    #         'Class': 'i8',
+    #         'Tck/Hov': 'i8',
+    #         'UstmN': 'i8',
+    #         'DownN': 'i8',
+    #         'DestN': 'i8',
+    #         'Stime': 'f8',
+    #         'TotalTime': 'f8',
+    #         '#Nodes': 'i8',
+    #         'VehType': 'i8',
+    #         'EVAC': 'i8',
+    #         'VOT': 'f8',
+    #         'tFlag': 'i8',
+    #         'PrefArrTime': 'f8',
+    #         'TripPur': 'i8',
+    #         'IniGas': 'f8',
+    #         'Toll': 'f8',
+    #         'Nodes': 'object'})).compute(get=get)
+    # print('Total running time: {}'.format(time() - start))
     import pdb; pdb.set_trace()
     #
     # final_dict.to_csv('taz_bins.csv', index=False)
