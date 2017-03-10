@@ -1,4 +1,8 @@
-
+'''
+records_aggregator.py: This module contains the class ReordsAggregator that
+    allows a user to user various functions for aggregating information
+    about vehicle trajectory records.
+'''
 import ast
 from time import time
 from math import ceil
@@ -25,6 +29,7 @@ class RecordsAggregator(object):
         self.sparse = self._make_sparse()
         self.tazs.apply(self._set_sparse, axis=1)
         self.final_value = None
+        self.taz = 0
 
     @staticmethod
     def _open_files(records, tazs):
@@ -87,64 +92,59 @@ class RecordsAggregator(object):
             chunk.Nodes.map(func)
         print('Total running time: {}'.format(time() - start))
 
-    def count_tazs(self, arg):
+    def count_tazs(self):
         '''
         Setup the aggregator to count the number of trips that pass through
         each taz.
         '''
         self.final_value = np.zeros(self.max_taz + 2).astype(int)
-        start = time()
-        self._iterate_chunk(_count_tazs)
+        self._iterate_chunk(self._count_tazs)
+        final_taz_bins = pd.DataFrame(self.final_value)
+        final_taz_bins.to_csv('taz_bins.csv', index=False)
 
-
-    def _count_tazs(row):
+    def _count_tazs(self, row):
         '''
-        For a given list of nodes, group them into bins and add the counts to the
-        corresponding index in the final taz count.
+        For a given list of nodes, group them into bins and add the counts to
+        the corresponding index in the final taz count.
         '''
         bins = np.bincount(self.sparse[row].flatten())
         self.final_value[:len(bins)] += bins
 
+    def collect_records_in_taz(self, taz):
+        '''
+        Setup the aggregator to collect Nodes that exist on trips that go
+        through a given TAZ. This will label the node with a boolean indicating
+        if the node is in the TAZ or not along with a total count of times the
+        node interacted with the TAZ.
 
+        Args:
+            taz (int): The taz number that you wish to aggregate nodes that
+                have an interaction with.
+        '''
+        self.final_value = Counter()
+        self.taz = taz
+        self._iterate_chunk(self._collect_records_in_taz)
+        counts = np.zeros((len(self.final_value), 3)).astype(int)
+        for index, (key, value) in enumerate(self.final_value.items()):
+            counts[index] = np.array([key[0], key[1], value])
+        final_node_counts = pd.DataFrame(
+            counts, columns=['Node', 'Bool', 'Count'])
+        final_node_counts.to_csv('node_pair_counts.csv', index=False)
 
-def collect_records_in_taz(row, taz_, sparse_, node_counts_):
-    '''
-    For a given list of nodes, if any of the nodes pass through the taz of
-    interest pair all nodes in a tuple containing the node and a boolean for
-    whether or not the node is in the taz of interest.
+    def _collect_records_in_taz(self, row):
+        '''
+        For a given list of nodes, if any of the nodes pass through the taz of
+        interest pair all nodes in a tuple containing the node and a boolean
+        for whether or not the node is in the taz of interest.
 
-    Args:
-        row: A row from a Pandas DataFrame object.
-        taz_ (int): The taz number that you wish to aggregate nodes that
-            have an interaction with.
-        sparse_ (np.array): A numpy array populated with the taz numbers that
-            each node interacts with.
-        node_counts_ (Counter): A counter that keeps track of the occurances of
-            each node bool pair in the form (node, bool) : count.
-    '''
-    tazs_ = sparse_[row][:, 0]
-    tazs_[np.where(sparse[row] == 344)[0]] = taz_
-    index_ = np.where(tazs_[np.where(tazs_ != 2108)] == taz_)
-    if len(index_[0]) > 0:
-        node_bool_pairs = np.array(list(map(np.array, zip(row, repeat(0)))))
-        node_bool_pairs[index_, 1] += 1
-        node_counts_.update(list(map(tuple, node_bool_pairs)))
-
-
-if __name__ == '__main__':
-    node_counts = Counter()
-    start = time()
-    for chunk in reader:
-        chunk.Nodes = chunk.Nodes.map(np.array)
-        chunk = chunk.drop(chunk.columns[chunk.columns != 'Nodes'], axis=1)
-        # chunk.Nodes.map(lambda x: count_tazs(x, sparse, final_counts))
-        chunk.Nodes.map(
-            lambda x: collect_records_in_taz(x, 344, sparse, node_counts))
-
-    # final_taz_bins = pd.DataFrame(final_counts)
-    # final_taz_bins.to_csv('taz_bins.csv', index=False)
-    counts = np.zeros((len(node_counts), 3)).astype(int)
-    for index, (key, value) in enumerate(node_counts.items()):
-        counts[index] = np.array([key[0], key[1], value])
-    final_node_counts = pd.DataFrame(counts, columns=['Node', 'Bool', 'Count'])
-    final_node_counts.to_csv('node_pair_counts.csv', index=False)
+        Args:
+            row: A row from a Pandas DataFrame object.
+        '''
+        tazs_ = self.sparse[row][:, 0]
+        tazs_[np.where(self.sparse[row] == self.taz)[0]] = self.taz
+        index_ = np.where(tazs_[np.where(tazs_ != 2108)] == self.taz)
+        if len(index_[0]) > 0:
+            node_bool_pairs = np.array(
+                list(map(np.array, zip(row, repeat(0)))))
+            node_bool_pairs[index_, 1] += 1
+            self.final_value.update(list(map(tuple, node_bool_pairs)))
