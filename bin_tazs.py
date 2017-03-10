@@ -12,13 +12,13 @@ from dask.multiprocessing import get
 
 
 
-def count_tazs(row, sparse_, final_arr_):
-    bins = np.bincount(sparse_[row.Nodes].flatten())
-    final_arr_[:len(bins)] += bins
+def count_tazs(row, sparse_):
+    return sparse_[row.Nodes].flatten()
+    # final_arr_[:len(bins)] += bins
 
 def set_sparse(row, sparse_):
-    sparse_[row[0]][:row[3].shape[0]] = row[3]
-    sparse_[row[0]][row[3].shape[0]:] = 2108
+    sparse_[row[0]][:row[2].shape[0]] = row[2]
+    sparse_[row[0]][row[2].shape[0]:] = 2108
 
 def process_chunk(chunk_item, sparse_mat, mgr_list):
     chunk_item.Nodes.map(lambda x: count_tazs(x, sparse_mat, mgr_list))
@@ -37,13 +37,21 @@ if __name__ == '__main__':
         'Parsed_Trajectories.csv',
         sep=' ',
         converters={
-            'Nodes': ast.literal_eval})
+            'Nodes': lambda x: np.array(ast.literal_eval(x))})
+    tazs = pd.read_csv(
+        'nodetazs1.csv',
+        sep='|',
+        converters={'tazList': ast.literal_eval})
+    sparse = np.zeros((300000, 7)).astype(int)
+    tazs.tazList = tazs.tazList.map(np.array)
+    print(type(tazs.tazList.values[0]))
+    tazs.apply(lambda x: set_sparse(x, sparse), axis=1)
     # df = pd.DataFrame({'x': [1, 2, 3, 4, 5],
     #                    'y': [1., 2., 3., 4., 5.]})
     # df.to_csv('test.csv')
     # ddf = dd.read_csv('test.csv')
     # res = ddf.map_partitions(myadd, 1, b=2).compute(get=get)
-    res = dask_df.map_partitions(add1).compute(get=get)
+    res = dask_df.map_partitions(count_tazs, sparse).compute(get=get)
     # reader = pd.read_csv(
     #     'Parsed_Trajectories.csv',
     #     sep=' ',
@@ -51,18 +59,13 @@ if __name__ == '__main__':
     #     converters={
     #         'Nodes': ast.literal_eval},
     #     chunksize=chunksize)
-    # tazs = dd.read_csv(
-    #     'nodetazs1.csv',
-    #     sep='|',
-    #     converters={'tazList': ast.literal_eval})
+
     # print(tazs.head())
     # # max_taz = tazs.tazList.max()[0]
     # tazs['nodes2'] = 0
     # tazs['nodes2'] = tazs.map_partitions(add1).compute(get=get)
     # # tazs['nodes2'] = res
     # import pdb; pdb.set_trace()
-    # sparse = np.zeros((300000, 7)).astype(int)
-    # tazs.apply(lambda x: set_sparse(x, sparse), axis=1)
     # final_arr = np.zeros(2109)
     # start = time()
     # import pdb; pdb.set_trace()
