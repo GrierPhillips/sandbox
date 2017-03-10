@@ -98,6 +98,7 @@ class ProcessManager(object):
         '''
         filenames = ['ab_dst_#.dat', 'isam#.properties']
         for index in range(9):
+            makedirs('inner{}'.format(self.inner))
             names = [item.replace('#', index) for item in filenames]
             self.dst_prop_gen.create(names[0], self.outer, self.inner)
             self.isam_prop_gen.create(names[1], self.outer, self.inner)
@@ -110,6 +111,7 @@ class ProcessManager(object):
         each.
         '''
         for _ in range(3):
+            makedirs('outer{}'.format(self.outer))
             self._run_outer()
             self.outer += 1
             self.inner = 0
