@@ -11,22 +11,100 @@ import numpy as np
 # pylint: disable=E1101
 
 
-def count_tazs(row, sparse_, final_counts_):
+class RecordsAggregator(object):
     '''
-    For a given list of nodes, group them into bins and add the counts to the
-    corresponding index in the final taz count.
+    Class to be used for implementing a variety of aggregations on vehicle
+    trajectory records.
     '''
-    bins = np.bincount(sparse_[row].flatten())
-    final_counts_[:len(bins)] += bins
+
+    def __init__(self, records, tazs):
+        self.reader, self.tazs = self._open_files(records, tazs)
+        self.max_taz = self.tazs.tazList.max()[0]
+        self.max_taz_length = 0
+        self.tazs.tazList.map(self._get_max_length)
+        self.sparse = self._make_sparse()
+        self.tazs.apply(self._set_sparse, axis=1)
+        self.final_value = None
+
+    @staticmethod
+    def _open_files(records, tazs):
+        '''
+        Read in a csv of vehicle trajectory records and a csv of Taz-Node
+        associations.
+
+        Args:
+            records (string): Name of a .csv file containing vehicle trajectory
+                records.
+            tazs (string): Name of a .csv file containing Tazs associated with
+                each node in the network.
+        '''
+        num_workers = cpu_count()
+        chunksize = ceil(5225579 / num_workers)
+        reader = pd.read_csv(
+            records,
+            sep=' ',
+            engine='c',
+            converters={
+                'Nodes': ast.literal_eval},
+            chunksize=chunksize)
+        tazs = pd.read_csv(
+            'nodetazs1.csv',
+            sep='|',
+            converters={'tazList': ast.literal_eval})
+        tazs.tazList = tazs.tazList.map(np.array)
+        return reader, tazs
+
+    def _get_max_length(self, row):
+        '''
+        Set the maximum length of the lists in tazList.
+        '''
+        if len(row) > self.max_taz_length:
+            self.max_taz_length = len(row)
+
+    def _make_sparse(self):
+        '''
+        Construct an array of zeros that is shaped max_node x max_taz_length.
+        The max_node value should be incremented slightly in case there are
+        nodes in the network that do not show up in the vehicle records.
+        '''
+        max_node = self.tazs.tazList.node.max()
+        sparse = np.zeros((max_node + 100, self.max_taz_length)).astype(int)
+        return sparse
+
+    def _set_sparse(self, row):
+        '''
+        Fill sparse array with array of tazs related to the node corresponding
+        to that index number.
+        '''
+        self.sparse[row[0]][:row[2].shape[0]] = row[2]
+        self.sparse[row[0]][row[2].shape[0]:] = 2108
+
+    def _iterate_chunk(self, func):
+        start = time()
+        for chunk in self.reader:
+            chunk.Nodes = chunk.Nodes.map(np.array)
+            chunk = chunk.drop(chunk.columns[chunk.columns != 'nodes'], axis=1)
+            chunk.Nodes.map(func)
+        print('Total running time: {}'.format(time() - start))
+
+    def count_tazs(self, arg):
+        '''
+        Setup the aggregator to count the number of trips that pass through
+        each taz.
+        '''
+        self.final_value = np.zeros(self.max_taz + 2).astype(int)
+        start = time()
+        self._iterate_chunk(_count_tazs)
 
 
-def set_sparse(row, sparse_):
-    '''
-    Fill sparse array with array of tazs related to the node corresponding
-    to that index number.
-    '''
-    sparse_[row[0]][:row[2].shape[0]] = row[2]
-    sparse_[row[0]][row[2].shape[0]:] = 2108
+    def _count_tazs(row):
+        '''
+        For a given list of nodes, group them into bins and add the counts to the
+        corresponding index in the final taz count.
+        '''
+        bins = np.bincount(self.sparse[row].flatten())
+        self.final_value[:len(bins)] += bins
+
 
 
 def collect_records_in_taz(row, taz_, sparse_, node_counts_):
@@ -54,29 +132,6 @@ def collect_records_in_taz(row, taz_, sparse_, node_counts_):
 
 
 if __name__ == '__main__':
-    num_workers = cpu_count()
-    chunksize = ceil(5225579 / num_workers)
-    reader = pd.read_csv(
-        'Parsed_Trajectories.csv',
-        sep=' ',
-        engine='c',
-        converters={
-            'Nodes': ast.literal_eval},
-        chunksize=chunksize)
-    # dask_df = dd.read_csv(
-    #     'Parsed_Trajectories.csv',
-    #     sep=' ',
-    #     converters={
-    #         'Nodes': ast.literal_eval})
-    tazs = pd.read_csv(
-        'nodetazs1.csv',
-        sep='|',
-        converters={'tazList': ast.literal_eval})
-    max_taz = tazs.tazList.max()[0]
-    tazs.tazList = tazs.tazList.map(np.array)
-    sparse = np.zeros((300000, 7)).astype(int)
-    tazs.apply(lambda x: set_sparse(x, sparse), axis=1)
-    final_counts = np.zeros(2109).astype(int)
     node_counts = Counter()
     start = time()
     for chunk in reader:
@@ -85,7 +140,7 @@ if __name__ == '__main__':
         # chunk.Nodes.map(lambda x: count_tazs(x, sparse, final_counts))
         chunk.Nodes.map(
             lambda x: collect_records_in_taz(x, 344, sparse, node_counts))
-    print('Total running time: {}'.format(time() - start))
+
     # final_taz_bins = pd.DataFrame(final_counts)
     # final_taz_bins.to_csv('taz_bins.csv', index=False)
     counts = np.zeros((len(node_counts), 3)).astype(int)
