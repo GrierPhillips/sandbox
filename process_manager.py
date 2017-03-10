@@ -13,13 +13,21 @@ class ProcessManager(object):
     '''
     Class for managing the processes involved with iterating though ISAM-DTA
     loops.
+
+    Args:
+        dst_prop_gen (BasePropGen object): Instance of BasePropGen class used
+            to create property files for AB_DST2.
+        isam_prop_gen (BasePropGen object): Instance of BasePropGen class used
+            to create property files for the runIsam.cmd batch file.
     '''
-    def __init__(self):
+    def __init__(self, dst_prop_gen, isam_prop_gen):
         self.commands = ['runIsam.cmd', 'runVehicleWriter.cmd']
         self.sumary_stats = [
             'Convergence.dat', 'OutMUC.dat', 'SummaryStat.dat']
         self.inner = 0
         self.outer = 0
+        self.dst_prop_gen = dst_prop_gen
+        self.isam_prop_gen = isam_prop_gen
 
     def call_command(self, script):
         '''
@@ -29,12 +37,12 @@ class ProcessManager(object):
             script (string): A command that executes on the command line.
 
         Example:
-            >>> call_command('runISAM.cmd', (0))
-            Execute runISAM.cmd with the argument 0 and wait for the
-        process to exit.
+            >>> call_command('runISAM.cmd')
+            Execute runISAM.cmd with self.inner and self.outer as command line
+            argumentsand wait for the process to exit.
         '''
         command = script + ' ' + str(self.outer) + ' ' + str(self.inner)
-        result = subprocess.run(
+        result = subprocess.run(  # pylint: disable=W0612
             command,
             check=True,
             stderr=subprocess.PIPE,
@@ -88,7 +96,11 @@ class ProcessManager(object):
         Run single iteration of outer loop. This involves 8 iterations of
         run_inner.
         '''
-        for _ in range(9):
+        filenames = ['ab_dst_#.dat', 'isam#.properties']
+        for index in range(9):
+            names = [item.replace('#', index) for item in filenames]
+            self.dst_prop_gen.create(names[0], self.outer, self.inner)
+            self.isam_prop_gen.create(names[1], self.outer, self.inner)
             self._run_inner()
             self.inner += 1
 
@@ -100,3 +112,4 @@ class ProcessManager(object):
         for _ in range(3):
             self._run_outer()
             self.outer += 1
+            self.inner = 0
