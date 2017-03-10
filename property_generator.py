@@ -19,6 +19,11 @@ class BasePropGen(object):
         self.root_path_keys = []
         self.loop_path_keys = []
         self._get_path_keys()
+        self.offsets = [
+            'simulated.vehicle.dat.file',
+            'simulated.path.dat.file',
+            'simulated.travel.time.file'
+        ]
 
     def _read_temp(self):
         '''
@@ -57,11 +62,14 @@ class BasePropGen(object):
             outer (string): The current outer loop iteration number.
             inner (string): The current inner loop iteration number.
         '''
+        # import pdb; pdb.set_trace()
         basepath = self.user_params['basepath']
         for key, value in self.user_params.items():
-            if key in self.root_path_keys or key in self.loop_path_keys:
-                self._set_path(key, outer, inner, basepath)
-            self.params[key] = value
+            if key == 'basepath':
+                for key in self.params.keys():
+                    self._set_path(key, outer, inner, basepath)
+            else:
+                self.params[key] = value
 
     def _set_path(self, key, outer, inner, basepath):
         '''
@@ -86,6 +94,7 @@ class BasePropGen(object):
             key (string): The key for the parameter to be set.
             basepath (string): The value entered by user for BASEPATH.
         '''
+        # import pdb; pdb.set_trace()
         self.params[key] = self.params[key].replace('BASEPATH', basepath)
 
     def set_loop_paths(self, key, outer, inner):
@@ -98,8 +107,24 @@ class BasePropGen(object):
             outer (string): The current outer loop iteration number.
             inner (string): The current inner loop iteration number.
         '''
+        if key in self.offsets:
+            if inner == 0:
+                self.params[key] = ''
+            else:
+                loop_pair = 'outer{}/inner{}'.format(outer, inner - 1)
+                self.params[key] = self.params[key]\
+                    .replace('LOOP_PAIR', loop_pair)\
+                    .replace('#', inner - 1)
+            return
+        if key == 'special.purpose.models.trip.file':
+            if inner == 0:
+                trk_ext = self.user_params['trk_ext']
+                self.params[key] = self.params[key].replace('TRK_EXT', trk_ext)
+            else:
+                self.params[key] = ''
+            return
         if 'LOOP_PAIR' in self.params[key]:
-            loop_pair = 'outer{}\\inner{}'.format(outer, inner)
+            loop_pair = 'outer{}/inner{}'.format(outer, inner)
             self.params[key] = self.params[key]\
                 .replace('LOOP_PAIR', loop_pair)\
                 .replace('#', inner)
