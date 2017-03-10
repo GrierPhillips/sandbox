@@ -100,7 +100,9 @@ class BasePropGen(object):
         '''
         if 'LOOP_PAIR' in self.params[key]:
             loop_pair = 'outer{}\\inner{}'.format(outer, inner)
-            self.params[key] = self.params[key].replace('LOOP_PAIR', loop_pair)
+            self.params[key] = self.params[key]\
+                .replace('LOOP_PAIR', loop_pair)\
+                .replace('#', inner)
         else:
             outer_loop = 'outer{}'.format(outer)
             self.params[key] = self.params[key].replace('OUTER', outer_loop)
