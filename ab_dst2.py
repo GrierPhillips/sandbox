@@ -3,46 +3,46 @@
 # DynusT batch run for iSAM
 
 import os
+import subprocess
 import struct
+import sys
 from array import array
 from shutil import copyfile, SameFileError
 import numpy as np
+from datetime import datetime
 
 
 class AB_DST2(object):
     def __init__(self, params_file):
-        self.params = {}
-        self.get_params(params_file)
-        self.header_info = {}
-        self.value_info = {}
+        self.params = self._get_params(params_file)
+        self.header_info, self.value_info = self._populate_fmts()
         self.vehicle_id = []
         self.total_time = []
         self.tag = []
         self.record = 0
         # self.run()
 
-    def _populate_fmts(self):
+    def _get_params(self, params_file):
+        '''
+        Get paramaters for running DynusT.
+        '''
+        with open(params_file, 'r') as file_obj:
+            lines = file_obj.readlines()
+        params = dict(line.strip().split('=') for line in lines)
+        return params
+
+    @staticmethod
+    def _populate_fmts():
         '''
         Set values for header_info and value_info.
         '''
         fmt_header = '<iBHHBBxxxiiiffiBBfBfBffx'
         size_header = struct.calcsize(fmt_header)
-        self.header_info = {'fmt': fmt_header, 'size': size_header}
+        header_info = {'fmt': fmt_header, 'size': size_header}
         fmt_value = '<i'
         size_value = struct.calcsize(fmt_value)
-        self.value_info = {'fmt': fmt_value, 'size': size_value}
-
-    def get_params(self, params_file):
-        '''
-        Get paramaters for running DynusT
-        '''
-        with open(params_file, 'r') as file_obj:
-            for line in file_obj:
-                try:
-                    param, value = line.split('=')
-                except ValueError:
-                    continue
-                self.params[param] = value.strip()
+        value_info = {'fmt': fmt_value, 'size': size_value}
+        return header_info, value_info
 
     def prepare_vehicle(self):
         inf = self.params["in_vehicle"]
@@ -59,6 +59,8 @@ class AB_DST2(object):
 
     def prepare_path(self):
         inf = self.params["in_path"]
+        if inf == '':
+            return
         ouf = self.params["in_folder"] + "path.dat"
         print("Preparing path.dat...")
         try:
@@ -102,7 +104,10 @@ class AB_DST2(object):
         scenario = os.path.basename(xxx)
         xxx += ("\\" + scenario + ".dws")
         print("Running DynusT...\n", xxx, '\n', scenario)
-        os.spawnv(os.P_WAIT, executable, [executable, xxx])
+        now = datetime.now
+        print("Start Time: {}".format(now().strftime("%Y-%m-%d %H:%M:%S")))
+        subprocess.run(executable, shell=True, check=True)
+        print("Finish Time: {}".format(now().strftime("%Y-%m-%d %H:%M:%S")))
 
     def post_run(self):
         '''
@@ -148,6 +153,11 @@ class AB_DST2(object):
                 if not self.load(file_obj):
                     break
         print('Number of records: {}'.format(len(self.vehicle_id)))
+        tag = np.array(self.tag)
+        print('Number of vehicles that completed trip: {}'
+              .format((tag-1).sum()))
+        print('Number of vehicles still in the network: {}'
+              .format((2-tag).sum()))
         output_file = self.params["out_time"]
         with open(output_file, 'wb') as file_obj:
             data = struct.pack('i', len(self.vehicle_id))
@@ -158,14 +168,14 @@ class AB_DST2(object):
             tot_times.fromlist(self.total_time)
             tags = array('i')
             tags.fromlist(self.tag)
-            np.savez_compressed(
-                file_obj,
-                veh_ids=veh_ids,
-                tot_times=tot_times,
-                tags=tags)
-            # veh_ids.tofile(file_obj)  # type: ignore
-            # tot_times.tofile(file_obj)  # type: ignore
-            # tags.tofile(file_obj)  # type: ignore
+            # np.savez_compressed(
+            #     file_obj,
+            #     veh_ids=veh_ids,
+            #     tot_times=tot_times,
+            #     tags=tags)
+            veh_ids.tofile(file_obj)
+            tot_times.tofile(file_obj)
+            tags.tofile(file_obj)
 
     def load(self, file_obj):
         '''
@@ -190,7 +200,7 @@ class AB_DST2(object):
             return True
         else:
             for _ in range(3):
-                if not self.read_values_line(file_obj, float):
+                if not self.read_values_line(file_obj, 'float32'):
                     return False
         return True
 
@@ -227,5 +237,10 @@ class AB_DST2(object):
         self.travel_time()
 
 
-# if __name__ == "__main__":
-#     AB_DST2(sys.argv[1])
+def main():
+    ab_dst = AB_DST2(sys.argv[1])
+    ab_dst.run()
+
+
+if __name__ == "__main__":
+    main()
