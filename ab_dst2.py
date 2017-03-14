@@ -98,16 +98,22 @@ class AB_DST2(object):
             file_obj.writelines(lines)
 
     def run_dynust(self):
+        '''
+        Run the DynusT executable from the dynust folder.
+        '''
         executable = self.params["in_folder"] + "DynusTv3bx64_0801.exe"
         xxx = self.params["in_folder"]
+        origin = os.getcwd()
         os.chdir(xxx)
-        scenario = os.path.basename(xxx)
-        xxx += ("\\" + scenario + ".dws")
-        print("Running DynusT...\n", xxx, '\n', scenario)
+        # scenario = os.path.basename(xxx)
+        # xxx += ("\\" + scenario + ".dws")
+        # print("Running DynusT...\n", xxx, '\n', scenario)
         now = datetime.now
         print("Start Time: {}".format(now().strftime("%Y-%m-%d %H:%M:%S")))
-        subprocess.run(executable, shell=True, check=True)
+        result = subprocess.run(executable, shell=True, check=True)
+        print('Dynust returncode: {}'.format(result.returncode))
         print("Finish Time: {}".format(now().strftime("%Y-%m-%d %H:%M:%S")))
+        os.chdir(origin)
 
     def post_run(self):
         '''
@@ -124,8 +130,7 @@ class AB_DST2(object):
             print('Failed in preparing output_vehicle.dat!\nThe destination ' +
                   'file is the same as source.')
         except OSError:
-            print('Failed in preparing output_vehicle.dat!\nYou do not have ' +
-                  'write access for the destination file.')
+            print('Failed in preparing output_vehicle.dat!')
         output_path = self.params["out_path"]
         if os.path.exists(output_path):
             os.remove(output_path)
